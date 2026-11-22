@@ -1,10 +1,11 @@
 """Esquemas de transporte del adaptador HTTP de IncidentOps."""
 
+from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from src.domain.models import ActiveIncidentStatus, RecommendedTeam, SeverityLevel
+from src.domain.models import ActiveIncidentStatus, IncidentStatus, RecommendedTeam, SeverityLevel
 
 
 class TriageRequest(BaseModel):
@@ -25,6 +26,43 @@ class TriageResponse(BaseModel):
     recommended_team: RecommendedTeam
     duplicate_group_key: str
     rationale: str
+
+
+class CreateIncidentRequest(BaseModel):
+    """Cuerpo de entrada de POST /api/v1/incidents."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    raw_text: str
+    incident_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+    status: Optional[IncidentStatus] = None
+
+
+class IncidentCreatedResponse(BaseModel):
+    """Objeto de salida compartido con el CLI (creación)."""
+
+    incident_id: str
+    severity: SeverityLevel
+    component: str
+    recommended_team: RecommendedTeam
+    duplicate_group_key: str
+    rationale: str
+    is_duplicate: bool
+    duplicate_of: List[str]
+
+
+class SLAEvaluationResponse(BaseModel):
+    """Objeto de salida compartido con el CLI (auditoría de SLA)."""
+
+    incident_id: str
+    severity: SeverityLevel
+    elapsed_minutes: int
+    allowed_minutes: int
+    remaining_minutes: int
+    is_breached: bool
+    requires_escalation: bool
 
 
 class ActiveIncidentItem(BaseModel):

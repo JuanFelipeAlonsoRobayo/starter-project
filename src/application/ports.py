@@ -35,7 +35,7 @@ class IncidentRepositoryPort(Protocol):
     def find_open_duplicates(
         self, duplicate_group_key: str, created_at: datetime, exclude_incident_id: str | None = None
     ) -> list[Incident]:
-        """Incidentes abiertos (OPEN/IN_PROGRESS) con el mismo grupo de duplicados creados antes de `created_at`; excluye el ID dado."""
+        """Incidentes con estado en `OPEN_DUPLICATE_STATUSES` (`src/domain/models.py`) con el mismo grupo de duplicados creados antes de `created_at`; excluye el ID dado."""
         ...
 
     def list_active_incidents(

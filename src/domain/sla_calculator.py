@@ -8,7 +8,7 @@ Implementa la decisión arquitectónica ADR-002:
   del 75% o que ya han incumplido su SLA.
 """
 
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from typing import Dict
 
 from src.domain.models import Incident, SLAEvaluation, SLARule, SeverityLevel
@@ -34,6 +34,13 @@ def get_sla_rule_for_severity(severity: SeverityLevel) -> SLARule:
     if severity not in SLA_POLICY_TABLE:
         raise ValueError(f"Severidad no válida: {severity}")
     return SLA_POLICY_TABLE[severity]
+
+
+def to_naive_utc(value: datetime) -> datetime:
+    """Normaliza una marca temporal a naive UTC (determinística, comparable)."""
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
 
 
 def _calculate_business_minutes(start_dt: datetime, end_dt: datetime) -> int:
@@ -74,19 +81,24 @@ def evaluate_sla_status(incident: Incident, reference_time: datetime) -> SLAEval
         SLAEvaluation con los minutos transcurridos, restantes y banderas de estado.
     """
     rule = get_sla_rule_for_severity(incident.severity)
-    end_time = incident.resolved_at or reference_time
+    created_at = to_naive_utc(incident.created_at)
+    end_time = (
+        to_naive_utc(incident.resolved_at)
+        if incident.resolved_at
+        else to_naive_utc(reference_time)
+    )
 
-    if end_time < incident.created_at:
+    if end_time < created_at:
         raise ReferenceTimeBeforeCreationError(
             "El tiempo de referencia no puede ser anterior a la creación "
             f"del incidente {incident.incident_id}."
         )
 
     if rule.operates_24x7:
-        delta_seconds = (end_time - incident.created_at).total_seconds()
+        delta_seconds = (end_time - created_at).total_seconds()
         elapsed_minutes = int(delta_seconds // 60)
     else:
-        elapsed_minutes = _calculate_business_minutes(incident.created_at, end_time)
+        elapsed_minutes = _calculate_business_minutes(created_at, end_time)
 
     remaining_minutes = rule.max_resolution_minutes - elapsed_minutes
     is_breached = elapsed_minutes > rule.max_resolution_minutes

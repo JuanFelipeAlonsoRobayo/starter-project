@@ -9,12 +9,15 @@ from fastapi.responses import JSONResponse
 from src.adapters.inbound.api.schemas import (
     ActiveIncidentItem,
     ActiveIncidentSummaryResponse,
+    CreateIncidentRequest,
+    IncidentCreatedResponse,
+    SLAEvaluationResponse,
     TriageRequest,
     TriageResponse,
 )
 from src.adapters.outbound.factory import create_incident_repository
 from src.application.ports import IncidentRepositoryPort
-from src.application.services import IncidentService, ValidationError
+from src.application.services import IncidentNotFoundError, IncidentService, ValidationError
 
 VALIDATION_STATUS = {
     "EMPTY_INCIDENT_ID": 422,
@@ -22,6 +25,9 @@ VALIDATION_STATUS = {
     "RAW_TEXT_TOO_LONG": 400,
     "INVALID_REFERENCE_TIME": 422,
     "REFERENCE_TIME_BEFORE_CREATION": 400,
+    "EMPTY_TITLE": 422,
+    "INVALID_CREATED_AT": 422,
+    "INVALID_STATUS": 422,
 }
 
 
@@ -107,6 +113,67 @@ def create_app(incident_repository: IncidentRepositoryPort | None = None) -> Fas
                 )
                 for incident in result.incidents
             ],
+        )
+
+    @app.post("/api/v1/incidents", response_model=IncidentCreatedResponse, status_code=201)
+    def create_incident(payload: CreateIncidentRequest) -> IncidentCreatedResponse | JSONResponse:
+        """Registra un incidente nuevo: clasificación + flags de duplicado."""
+        try:
+            result = service.create_incident(
+                title=payload.title,
+                raw_text=payload.raw_text,
+                incident_id=payload.incident_id,
+                created_at=payload.created_at,
+                status=payload.status,
+            )
+        except ValidationError as exc:
+            status_code = VALIDATION_STATUS.get(exc.code, 422)
+            return _error_response(status_code, exc.code, exc.message)
+
+        return IncidentCreatedResponse(
+            incident_id=result.incident_id,
+            severity=result.severity,
+            component=result.component,
+            recommended_team=result.recommended_team,
+            duplicate_group_key=result.duplicate_group_key,
+            rationale=result.rationale,
+            is_duplicate=result.is_duplicate,
+            duplicate_of=result.duplicate_of,
+        )
+
+    @app.get("/api/v1/incidents/{incident_id}/sla", response_model=SLAEvaluationResponse)
+    def get_sla(
+        incident_id: str,
+        reference_time: str | None = Query(default=None),
+    ) -> SLAEvaluationResponse | JSONResponse:
+        """Audita el SLA de un incidente almacenado."""
+        try:
+            result = service.evaluate_incident_sla(
+                incident_id=incident_id,
+                reference_time=reference_time,
+            )
+        except IncidentNotFoundError:
+            return _error_response(
+                404,
+                "INCIDENT_NOT_FOUND",
+                f"El incidente {incident_id} no existe.",
+            )
+        except ValidationError as exc:
+            status_code = (
+                422
+                if exc.code in ("REFERENCE_TIME_BEFORE_CREATION", "INVALID_REFERENCE_TIME")
+                else VALIDATION_STATUS.get(exc.code, 422)
+            )
+            return _error_response(status_code, exc.code, exc.message)
+
+        return SLAEvaluationResponse(
+            incident_id=result.incident_id,
+            severity=result.severity,
+            elapsed_minutes=result.elapsed_minutes,
+            allowed_minutes=result.allowed_minutes,
+            remaining_minutes=result.remaining_minutes,
+            is_breached=result.is_breached,
+            requires_escalation=result.requires_escalation,
         )
 
     @app.exception_handler(RequestValidationError)

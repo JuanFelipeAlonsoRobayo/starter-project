@@ -6,9 +6,14 @@ from typing import Any, Dict, Optional
 import typer
 
 from src.adapters.outbound.factory import create_incident_repository
-from src.application.services import IncidentService, ValidationError
+from src.application.services import (
+    IncidentCreationResult,
+    IncidentNotFoundError,
+    IncidentService,
+    ValidationError,
+)
 from src.domain.active_summary import ActiveIncidentSummary
-from src.domain.models import TriageResult
+from src.domain.models import SLAEvaluation, TriageResult
 
 app = typer.Typer(help="IncidentOps CLI")
 service = IncidentService()
@@ -118,6 +123,94 @@ def summary(
         raise typer.Exit(code=1)
 
     typer.echo(json.dumps(_summary_payload(result), ensure_ascii=False))
+
+
+def _incident_created_payload(result: IncidentCreationResult) -> Dict[str, Any]:
+    """Payload JSON de salida compartido entre HTTP y CLI (creación)."""
+    return {
+        "incident_id": result.incident_id,
+        "severity": result.severity,
+        "component": result.component,
+        "recommended_team": result.recommended_team,
+        "duplicate_group_key": result.duplicate_group_key,
+        "rationale": result.rationale,
+        "is_duplicate": result.is_duplicate,
+        "duplicate_of": result.duplicate_of,
+    }
+
+
+def _sla_payload(result: SLAEvaluation) -> Dict[str, Any]:
+    """Payload JSON de salida compartido entre HTTP y CLI (auditoría de SLA)."""
+    return {
+        "incident_id": result.incident_id,
+        "severity": result.severity,
+        "elapsed_minutes": result.elapsed_minutes,
+        "allowed_minutes": result.allowed_minutes,
+        "remaining_minutes": result.remaining_minutes,
+        "is_breached": result.is_breached,
+        "requires_escalation": result.requires_escalation,
+    }
+
+
+@app.command("create")
+def create(
+    title: str = typer.Option(..., "--title", help="Título del incidente."),
+    raw_text: str = typer.Option(..., "--raw-text", help="Texto crudo del reporte original."),
+    incident_id: Optional[str] = typer.Option(
+        None, "--incident-id", help="Identificador (autogenerado si se omite)."
+    ),
+    created_at: Optional[str] = typer.Option(
+        None, "--created-at", help="Instante ISO-8601 (default: ahora)."
+    ),
+    status: Optional[str] = typer.Option(
+        None, "--status", help="Estado del incidente (default: OPEN)."
+    ),
+) -> None:
+    """Registra un incidente nuevo y muestra su clasificación y duplicados."""
+    svc = IncidentService(incident_repository=create_incident_repository())
+    try:
+        result = svc.create_incident(
+            title=title,
+            raw_text=raw_text,
+            incident_id=incident_id,
+            created_at=created_at,
+            status=status,
+        )
+    except ValidationError as exc:
+        _emit_error(exc.code, exc.message)
+        raise typer.Exit(code=1)
+    except Exception:
+        _emit_error("INTERNAL_ERROR", "Error interno inesperado.")
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(_incident_created_payload(result), ensure_ascii=False))
+
+
+@app.command("sla")
+def sla(
+    incident_id: str = typer.Option(..., "--incident-id", help="Identificador del incidente."),
+    reference_time: Optional[str] = typer.Option(
+        None,
+        "--reference-time",
+        help="Instante ISO-8601 de evaluación del SLA (default: ahora).",
+    ),
+) -> None:
+    """Muestra la auditoría de SLA de un incidente almacenado."""
+    svc = IncidentService(incident_repository=create_incident_repository())
+    try:
+        result = svc.evaluate_incident_sla(
+            incident_id=incident_id,
+            reference_time=reference_time,
+        )
+    except IncidentNotFoundError:
+        _emit_error("INCIDENT_NOT_FOUND", f"El incidente {incident_id} no existe.")
+        raise typer.Exit(code=2)
+    except ValidationError as exc:
+        _emit_error(exc.code, exc.message)
+        raise typer.Exit(code=1)
+    except Exception:
+        _emit_error("INTERNAL_ERROR", "Error interno inesperado.")
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(_sla_payload(result), ensure_ascii=False))
 
 
 if __name__ == "__main__":

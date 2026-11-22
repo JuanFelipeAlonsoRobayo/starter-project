@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime
 from typing import Iterable, List, Optional, Tuple
 
-from src.domain.models import Incident
+from src.domain.models import OPEN_DUPLICATE_STATUSES, Incident
 from src.domain.sla_calculator import SLA_POLICY_TABLE
 
 
@@ -51,6 +51,8 @@ class SqliteIncidentRepository:
             CREATE INDEX IF NOT EXISTS idx_incidents_duplicate_group_key
                 ON incidents (duplicate_group_key)
                 WHERE duplicate_group_key IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_incidents_dup_key
+                ON incidents (duplicate_group_key, status);
             """
         )
         for rule in SLA_POLICY_TABLE.values():
@@ -66,6 +68,7 @@ class SqliteIncidentRepository:
 
     def save_incident(self, incident: Incident, duplicate_group_key: Optional[str] = None) -> None:
         """Inserta o reemplaza un incidente."""
+        key = incident.duplicate_group_key if incident.duplicate_group_key is not None else duplicate_group_key
         self.conn.execute(
             """
             INSERT OR REPLACE INTO incidents
@@ -80,7 +83,7 @@ class SqliteIncidentRepository:
                 incident.status,
                 incident.created_at.isoformat(),
                 incident.resolved_at.isoformat() if incident.resolved_at else None,
-                duplicate_group_key,
+                key,
             ),
         )
         self.conn.commit()
@@ -89,7 +92,8 @@ class SqliteIncidentRepository:
         """Devuelve el incidente por ID persistente, o None si no existe."""
         row = self.conn.execute(
             """
-            SELECT incident_id, title, component, severity, status, created_at, resolved_at
+            SELECT incident_id, title, component, severity, status, created_at, resolved_at,
+                   duplicate_group_key
             FROM incidents
             WHERE incident_id = ?
             """,
@@ -100,16 +104,23 @@ class SqliteIncidentRepository:
     def find_open_duplicates(
         self, duplicate_group_key: str, created_at: datetime, exclude_incident_id: Optional[str] = None
     ) -> List[Incident]:
-        """Incidentes abiertos (OPEN/IN_PROGRESS) con el mismo grupo de duplicados,
-        creados antes de `created_at`; excluye el ID dado; ordenados de menor a mayor antigüedad."""
-        sql = """
-            SELECT incident_id, title, component, severity, status, created_at, resolved_at
+        """Incidentes con estado en `OPEN_DUPLICATE_STATUSES` (constante de dominio en
+        `src/domain/models.py`) con el mismo grupo de duplicados, creados antes de
+        `created_at`; excluye el ID dado; ordenados de menor a mayor antigüedad."""
+        placeholders = ", ".join("?" for _ in OPEN_DUPLICATE_STATUSES)
+        sql = f"""
+            SELECT incident_id, title, component, severity, status, created_at, resolved_at,
+                   duplicate_group_key
             FROM incidents
             WHERE duplicate_group_key = ?
-              AND status IN ('OPEN', 'IN_PROGRESS')
+              AND status IN ({placeholders})
               AND created_at <= ?
             """
-        params: Tuple[object, ...] = (duplicate_group_key, created_at.isoformat())
+        params: Tuple[object, ...] = (
+            duplicate_group_key,
+            *OPEN_DUPLICATE_STATUSES,
+            created_at.isoformat(),
+        )
         if exclude_incident_id:
             sql += " AND incident_id != ?"
             params += (exclude_incident_id,)
@@ -127,7 +138,7 @@ class SqliteIncidentRepository:
         cursor = self.conn.execute(
             """
             SELECT i.incident_id, i.title, i.component, i.severity, i.status,
-                   i.created_at, i.resolved_at
+                   i.created_at, i.resolved_at, i.duplicate_group_key
             FROM incidents AS i
             INNER JOIN sla_policies AS p ON p.severity = i.severity
             WHERE i.status IN ('OPEN', 'IN_PROGRESS')
@@ -149,7 +160,8 @@ class SqliteIncidentRepository:
         """Devuelve todos los incidentes; el filtrado de negocio ocurre en el dominio."""
         cursor = self.conn.execute(
             """
-            SELECT incident_id, title, component, severity, status, created_at, resolved_at
+            SELECT incident_id, title, component, severity, status, created_at, resolved_at,
+                   duplicate_group_key
             FROM incidents
             """
         )
@@ -176,4 +188,5 @@ class SqliteIncidentRepository:
             resolved_at=(
                 datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None
             ),
+            duplicate_group_key=row["duplicate_group_key"],
         )
