@@ -1,0 +1,13 @@
+extend = "../../../pyproject.toml"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "TID"]
+
+[lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[lint.flake8-tidy-imports.extend-banned-api]
+"sqlite3".msg = "Usa src.adapters.outbound.factory, no el driver."
+"psycopg".msg = "Usa src.adapters.outbound.factory, no el driver."
+"sqlalchemy".msg = "Usa src.adapters.outbound.factory, no el ORM."
+"src.adapters.outbound.sqlite_repository".msg = "Obtén el repositorio vía src.adapters.outbound.factory."

@@ -1,11 +1,13 @@
-"""Adaptador primario de línea de comandos para el triaje de incidentes."""
+"""Adaptador primario de línea de comandos para IncidentOps."""
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import typer
 
+from src.adapters.outbound.factory import create_incident_repository
 from src.application.services import IncidentService, ValidationError
+from src.domain.active_summary import ActiveIncidentSummary
 from src.domain.models import TriageResult
 
 app = typer.Typer(help="IncidentOps CLI")
@@ -26,6 +28,28 @@ def _result_payload(result: TriageResult) -> Dict[str, Any]:
         "recommended_team": result.recommended_team,
         "duplicate_group_key": result.duplicate_group_key,
         "rationale": result.rationale,
+    }
+
+
+def _summary_payload(summary: ActiveIncidentSummary) -> Dict[str, Any]:
+    return {
+        "reference_time": summary.reference_time.isoformat(),
+        "component": summary.component,
+        "total_active": summary.total_active,
+        "breached_count": summary.breached_count,
+        "incidents": [
+            {
+                "incident_id": incident.incident_id,
+                "title": incident.title,
+                "component": incident.component,
+                "severity": incident.severity,
+                "status": incident.status,
+                "elapsed_minutes": incident.elapsed_minutes,
+                "is_breached": incident.is_breached,
+                "requires_escalation": incident.requires_escalation,
+            }
+            for incident in summary.incidents
+        ],
     }
 
 
@@ -62,6 +86,38 @@ def triage(
         return
 
     typer.echo(json.dumps(_result_payload(result), ensure_ascii=False))
+
+
+@app.command("summary")
+def summary(
+    component: Optional[str] = typer.Option(
+        None,
+        "--component",
+        help="Componente por el que filtrar el resumen.",
+    ),
+    reference_time: Optional[str] = typer.Option(
+        None,
+        "--reference-time",
+        help="Instante ISO-8601 de evaluación del SLA.",
+    ),
+) -> None:
+    """Muestra el resumen de incidentes activos y su estado de SLA."""
+    try:
+        summary_service = IncidentService(
+            incident_repository=create_incident_repository()
+        )
+        result = summary_service.get_active_incidents_summary(
+            component_filter=component,
+            reference_time=reference_time,
+        )
+    except ValidationError as exc:
+        _emit_error(exc.code, exc.message)
+        raise typer.Exit(code=2)
+    except Exception:
+        _emit_error("INTERNAL_ERROR", "Error interno inesperado.")
+        raise typer.Exit(code=1)
+
+    typer.echo(json.dumps(_summary_payload(result), ensure_ascii=False))
 
 
 if __name__ == "__main__":

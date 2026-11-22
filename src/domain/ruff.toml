@@ -1,0 +1,20 @@
+extend = "../../pyproject.toml"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "TID"]
+
+[lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[lint.flake8-tidy-imports.extend-banned-api]
+"fastapi".msg = "El dominio no depende de frameworks web."
+"pydantic".msg = "El dominio no depende de validación de frameworks."
+"typer".msg = "El dominio no depende de la CLI."
+"uvicorn".msg = "El dominio no depende del servidor HTTP."
+"requests".msg = "El dominio no hace IO de red."
+"httpx".msg = "El dominio no hace IO de red."
+"sqlite3".msg = "El dominio no depende de la base de datos."
+"psycopg".msg = "El dominio no depende de la base de datos."
+"sqlalchemy".msg = "El dominio no depende de un ORM."
+"src.application".msg = "El dominio no conoce la aplicación."
+"src.adapters".msg = "El dominio no conoce adaptadores."

@@ -24,6 +24,11 @@ SLA_POLICY_TABLE: Dict[SeverityLevel, SLARule] = {
 }
 
 
+class ReferenceTimeBeforeCreationError(ValueError):
+    """El instante de referencia es anterior a la creación del incidente."""
+
+
+
 def get_sla_rule_for_severity(severity: SeverityLevel) -> SLARule:
     """Obtiene la regla de SLA aplicable a una severidad validada contra la tabla."""
     if severity not in SLA_POLICY_TABLE:
@@ -72,7 +77,10 @@ def evaluate_sla_status(incident: Incident, reference_time: datetime) -> SLAEval
     end_time = incident.resolved_at or reference_time
 
     if end_time < incident.created_at:
-        raise ValueError("El tiempo de referencia no puede ser anterior a la creación.")
+        raise ReferenceTimeBeforeCreationError(
+            "El tiempo de referencia no puede ser anterior a la creación "
+            f"del incidente {incident.incident_id}."
+        )
 
     if rule.operates_24x7:
         delta_seconds = (end_time - incident.created_at).total_seconds()
