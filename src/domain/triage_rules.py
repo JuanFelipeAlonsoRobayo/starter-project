@@ -5,9 +5,9 @@ import json
 from pathlib import Path
 from typing import Dict, List
 
-from src.models import RecommendedTeam, SeverityLevel, TriageResult
+from src.domain.models import RecommendedTeam, SeverityLevel, TriageResult
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_DATA_PATH = PROJECT_ROOT / "data" / "sample_incidents.json"
 
 
@@ -127,7 +127,7 @@ def _run_triage_audit() -> None:
     incidents: List[Dict[str, str]] = json.loads(SAMPLE_DATA_PATH.read_text(encoding="utf-8"))
     groups: Dict[str, List[str]] = defaultdict(list)
 
-    print("=== Auditoría del Motor de Triaje Refactorizado (`src/triage_rules.py`) ===")
+    print("=== Auditoría del Motor de Triaje Refactorizado (`src/domain/triage_rules.py`) ===")
     header = (
         f"{'ID':<10} | {'Sev.':<4} | {'Componente':<20} | "
         f"{'Equipo Asignado':<14} | {'Clave de Duplicado':<38} | {'Extracto del Reporte'}"

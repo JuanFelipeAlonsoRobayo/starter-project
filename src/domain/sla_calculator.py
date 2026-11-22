@@ -11,7 +11,7 @@ Implementa la decisión arquitectónica ADR-002:
 from datetime import datetime, time, timedelta
 from typing import Dict
 
-from src.models import Incident, SLAEvaluation, SLARule, SeverityLevel
+from src.domain.models import Incident, SLAEvaluation, SLARule, SeverityLevel
 
 BUSINESS_START_TIME = time(8, 0, 0)
 BUSINESS_END_TIME = time(18, 0, 0)
