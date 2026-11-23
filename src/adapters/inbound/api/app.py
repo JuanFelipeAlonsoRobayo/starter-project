@@ -10,6 +10,7 @@ from src.adapters.inbound.api.schemas import (
     ActiveIncidentItem,
     ActiveIncidentSummaryResponse,
     CreateIncidentRequest,
+    HealthResponse,
     IncidentCreatedResponse,
     SLAEvaluationResponse,
     TriageRequest,
@@ -174,6 +175,16 @@ def create_app(incident_repository: IncidentRepositoryPort | None = None) -> Fas
             remaining_minutes=result.remaining_minutes,
             is_breached=result.is_breached,
             requires_escalation=result.requires_escalation,
+        )
+
+    @app.get("/health", response_model=HealthResponse)
+    def health() -> HealthResponse | JSONResponse:
+        """Chequeo de salud real de conectividad al motor de persistencia (per `contracts/health_endpoint_contract.md`)."""
+        if service.check_health():
+            return HealthResponse(status="ok", database="connected")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "database": "unavailable"},
         )
 
     @app.exception_handler(RequestValidationError)

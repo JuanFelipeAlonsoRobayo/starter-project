@@ -60,6 +60,12 @@ class IncidentService:
     def __init__(self, incident_repository: Optional[IncidentRepositoryPort] = None) -> None:
         self._incident_repository = incident_repository
 
+    def check_health(self) -> bool:
+        """Verifica el estado de operación del repositorio saliente."""
+        if self._incident_repository is None:
+            return False
+        return self._incident_repository.check_health()
+
     def create_incident(
         self,
         title: str,

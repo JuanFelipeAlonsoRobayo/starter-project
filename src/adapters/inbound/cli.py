@@ -125,6 +125,17 @@ def summary(
     typer.echo(json.dumps(_summary_payload(result), ensure_ascii=False))
 
 
+@app.command("health")
+def health() -> None:
+    """Ejecuta `SELECT 1` real sobre la base configurada y muestra el estado de salud (per `contracts/health_endpoint_contract.md`)."""
+    svc = IncidentService(incident_repository=create_incident_repository())
+    if svc.check_health():
+        typer.echo(json.dumps({"status": "ok", "database": "connected"}, ensure_ascii=False))
+    else:
+        typer.echo(json.dumps({"status": "error", "database": "unavailable"}, ensure_ascii=False))
+        raise typer.Exit(code=1)
+
+
 def _incident_created_payload(result: IncidentCreationResult) -> Dict[str, Any]:
     """Payload JSON de salida compartido entre HTTP y CLI (creación)."""
     return {

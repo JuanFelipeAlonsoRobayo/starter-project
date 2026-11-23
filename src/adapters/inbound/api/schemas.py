@@ -88,6 +88,13 @@ class ActiveIncidentSummaryResponse(BaseModel):
     incidents: List[ActiveIncidentItem]
 
 
+class HealthResponse(BaseModel):
+    """Contrato del chequeo de salud expuesto por `GET /health` (per `contracts/health_endpoint_contract.md`)."""
+
+    status: str
+    database: str
+
+
 class ErrorDetail(BaseModel):
     """Detalle estable de un error de transporte."""
 

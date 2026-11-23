@@ -1,0 +1,38 @@
+# Orquestación multi-contenedor (per ADR-004, plan.md, data-model.md):
+# contenedor `db` (PostgreSQL dedicado) + contenedor `api` (FastAPI).
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: incidentops
+      POSTGRES_PASSWORD: incidentops
+      POSTGRES_DB: incidentops
+    volumes:
+      - incidentops_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U incidentops"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://incidentops:incidentops@db:5432/incidentops
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  incidentops_pgdata:

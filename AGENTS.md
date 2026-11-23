@@ -3,17 +3,19 @@
 ## Setup and execution
 
 - Work from the repo root; the README's `cd week-1/starter-project` is stale. Use `uv sync`, then `uv run python -m src.<module>`.
+- `docker compose up -d --wait` — levanta los contenedores `api` (FastAPI) y `db` (`postgres:16-alpine`); `GET /health` → 200 `{"status":"ok","database":"connected"}` (per ADR-004, specs/004-postgres-container-runtime/spec.md).
 - `[tool.uv] package = false`: this is not an installed package. Do not add `pip install -e .` or package metadata.
-- Runtime dependencies include `fastapi`, `uvicorn`, `pydantic`, `typer`, and `tiktoken`; development dependencies include `pytest`, `httpx`, and `ruff`.
+- Runtime dependencies include `fastapi`, `uvicorn`, `pydantic`, `typer`, `tiktoken`, and `psycopg[binary]`; development dependencies include `pytest`, `httpx`, and `ruff`.
 - Always use `uv run` for `src/context_audit.py`: without `tiktoken`, it silently switches to an approximate BPE estimator, making token counts incomparable with the documented `o200k_base` results.
 - Acceptance tests are automated with `pytest` (`tests/test_spec_001_triage.py` and `tests/test_spec_002_summary.py`). There is no typechecker or CI config; `uv run ruff check src/` is the boundary gate, now with `[tool.ruff.lint] select = ["E4", "E7", "E9", "F", "TID"]` at root and per-layer `ruff.toml` files (`src/domain/`, `src/application/`, `src/adapters/inbound/`) with `extend` + `ban-relative-imports = "parents"` and per-layer `TID251` bans.
-- `DATABASE_URL` selects the repository through `src/adapters/outbound/factory.py`; `create_incident_repository() -> IncidentRepositoryPort`. Accepted forms: a path (`/ruta/incidentops.db`), `sqlite:///ruta/incidentops.db`, or `sqlite:///:memory:` (default). The summary is read-only; it does not create or modify incidents.
+- `DATABASE_URL` selects the repository through `src/adapters/outbound/factory.py` (per ADR-004): `postgresql://`/`postgres://` → `PostgresIncidentRepository`; a path (`/ruta/incidentops.db`), `sqlite:///ruta/incidentops.db`, or `sqlite:///:memory:` (default) → `SqliteIncidentRepository`. `create_repository(database_url) -> IncidentRepositoryPort`; `create_incident_repository() -> IncidentRepositoryPort` wrapper. `IncidentService.check_health() -> bool` delega al puerto; `GET /health` y comando `health` exponen el chequeo real (contrato 200/503 per ADR-004, specs/004-postgres-container-runtime/spec.md). The summary is read-only; it does not create or modify incidents.
 
 ## Commands
 
 - `uv run pytest -q` — runs the BDD acceptance test suites for HTTP and CLI triage (`specs/001-triage-endpoint-manual.md`) and the active-incident summary (`specs/002-active-incident-summary/spec.md`).
 - `uv run python -m src.adapters.inbound.cli triage --incident-id <id> --raw-text "<text>" [--human]` — invokes the CLI triage adapter in-process (default output is JSON).
 - `uv run python -m src.adapters.inbound.cli summary [--component <componente>] [--reference-time <ISO-8601>]` — emits the active-incident summary as JSON; the same object is returned by `GET /api/v1/incidents/summary`.
+- `uv run python -m src.adapters.inbound.cli health` — chequeo de salud real de conectividad al motor configurado; salida JSON `{"status":"ok","database":"connected"}` (exit 0) o `{"status":"error","database":"unavailable"}` (exit 1), per ADR-004.
 - `uv run python -m src.adapters.inbound.cli create --title "<título>" --raw-text "<texto>" [--incident-id <id>] [--created-at <ISO-8601>] [--status <OPEN|IN_PROGRESS|ESCALATION_REQUIRED|RESOLVED>]` — registra un incidente nuevo: clasificación completa (`severity`, `component`, `recommended_team`, `duplicate_group_key`, `rationale`), `is_duplicate` y `duplicate_of`; salida JSON (default); `EMPTY_TITLE`/`EMPTY_RAW_TEXT` → exit 1.
 - `uv run python -m src.adapters.inbound.cli sla --incident-id <id> [--reference-time <ISO-8601>]` — auditoría de SLA de un incidente almacenado: `incident_id`, `severity`, `elapsed_minutes`, `allowed_minutes`, `remaining_minutes`, `is_breached`, `requires_escalation`; 404 si el incidente no existe (exit 2), 422 si `reference_time < created_at` (exit 1).
 - `uv run uvicorn src.adapters.inbound.api.app:app --reload` — starts the FastAPI HTTP adapter (`POST /triage` and `GET /api/v1/incidents/summary`).

@@ -1,0 +1,15 @@
+# Exclusiones del contexto de build del contenedor api (per plan.md Phase 1 / T002).
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+tests/
+docs/
+specs/
+data/
+.git/
+Imagenes-Evidencias/
+CONTEXT_LOG.md
+SDD_LOG.md
+*.log

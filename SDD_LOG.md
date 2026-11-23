@@ -1,10 +1,10 @@
 # Bitácora de Desarrollo Guiado por Especificaciones — Semana 2 (`SDD_LOG.md`)
 
-**Estudiante**: `Juan Felipe Alonso Robayo`
+**Estudiante(s)**: `Juan Felipe Alonso Robayo`
 
 **Fecha**: `2026-11-22`
 
-**Modelos Utilizados en OpenCode (Plan/Razonamiento vs. Build/Implementación)**: `[Ej. Modelo de Razonamiento para Clarify, Plan y Analyze / Modelo rápido para Implement]`
+**Modelos Utilizados en OpenCode (Plan/Razonamiento vs. Build/Implementación)**: `Tidepool Alpha Free (OpenCode — Modo Plan / Reasoning para Specify, Clarify, Plan y Analyze; Modo Build para Implement)`
 
 ---
 
@@ -25,9 +25,12 @@
 
 ### 1.2 Feature `004-postgres-container-runtime`
 - **Ambigüedades y RNF aclarados antes de diseñar PostgreSQL/Compose**:
-  1. `[Pendiente al ejecutar /speckit.clarify en Reto 2: ej. contrato exacto de GET /health y CLI health (200 OK con {"status":"ok","database":"connected"} vs. 503 Service Unavailable con {"status":"error","database":"unavailable"})]`
-  2. `[Pendiente: ej. selección transparente del adaptador por DATABASE_URL (postgresql://... vs. sqlite:///... o :memory: por defecto para pruebas locales sin Docker)]`
-  3. `[Pendiente: ej. orden de arranque en Docker Compose mediante depends_on con condition: service_healthy sobre pg_isready y paridad de timestamps ISO-8601 en TEXT]`
+  1. **Canales de exposición y paridad del chequeo de salud (`Q1 — Interaction & UX Flow`)**: `/speckit.clarify` detectó que el requerimiento crudo pedía *"exponer un chequeo real de salud de conectividad"* sin especificar si era exclusivo de HTTP o también de terminal; se aclaró exponerlo en **ambos canales** (`GET /health` y subcomando CLI `health`) compartiendo el mismo contrato de respuesta.
+  2. **Semántica de verificación en vivo y códigos de fallo (`RNF Disponibilidad / Observabilidad`)**: Se estableció que el chequeo debe ejecutar una consulta real (`SELECT 1`) sin cachear estados previos, respondiendo `200 OK` con `{"status": "ok", "database": "connected"}` cuando la base responde, y `503 Service Unavailable` con `{"status": "error", "database": "unavailable"}` cuando el adaptador de persistencia falla (`check_health() -> False`) o la base aún está arrancando.
+  3. **Selección transparente de motor vía `DATABASE_URL` y RNF de portabilidad/reproducibilidad en contenedores (`Constraints & ADR-004`)**: Gracias al orden causal `ADR-004` $\rightarrow$ `/speckit.constitution` previo a `/speckit.specify`, quedaron pre-aclarados los RNF de selección dual sin ORM (`postgresql://...` hacia `PostgresIncidentRepository` con `psycopg[binary]` y `sqlite:///...` o `:memory:` por defecto hacia `SqliteIncidentRepository` para pruebas locales sin Docker) y la topología reproducible de 2 contenedores (`db` con `postgres:16-alpine` + `pg_isready` y `api` con `python:3.12-slim` + `uv` sincronizado mediante `depends_on: service_healthy`).
+- **Hallazgos o validaciones de `/speckit.analyze` antes de implementar**:
+  - **Cobertura y alineación con la Constitución**: `100 %` de cobertura (`11/11` requisitos: `FR-001` a `FR-006` y `SC-001` a `SC-005`) sobre `16` tareas (`T001`–`T016`), con **`0` hallazgos `CRITICAL`** y validación completa de los principios I–V de la Constitución actualizada con `ADR-004`.
+  - **Hallazgos menores/medios (`A1`–`C2`)**: Detectó que en `T008` convenía explicitar la aserción `isinstance(create_repository("postgresql://..."), PostgresIncidentRepository)` (`B3 — MEDIUM`), añadir citas explícitas a `data-model.md` para `IncidentService.check_health` en `T010` (`C1 — MEDIUM`) e `incidents.created_at` (`TEXT` ISO 8601) en `T006` (`C2 — MEDIUM`), y limpiar una nota vacía en `data-model.md` (`B2 — MEDIUM`).
 
 ---
 
@@ -62,14 +65,12 @@
 
 ## 4. Evidencia de Verificación Determinista
 
-> **Nota**: A continuación se registra la evidencia base inicial verificada (Hitos `001` y `002`). Al completar los Retos 1 (`003`) y 2 (`004`), actualiza estos tres bloques con la salida final que incluya también `test_spec_003_lifecycle_sla.py`, `test_spec_004_runtime_health.py`, los comandos CLI `create`/`sla`/`health` y `docker compose config`.
-
 - **Análisis estático de fronteras hexagonales (`uv run ruff check src/`)**:
 ```text
 All checks passed!
 ```
 
-- **Salida completa de `uv run pytest -v` (Línea base inicial Hitos `001` y `002`)**:
+- **Salida completa de `uv run pytest -v`**:
 ```text
 ============================= test session starts ==============================
 platform linux -- Python 3.14.10, pytest-9.2.0, pluggy-1.7.0 -- /home/sexdeg/Proyectos/starter-project/.venv/bin/python
@@ -78,34 +79,44 @@ rootdir: /home/sexdeg/Proyectos/starter-project
 configfile: pyproject.toml
 testpaths: tests
 plugins: anyio-4.16.0
-collecting ... collected 24 items
+collecting ... collected 34 items
 
-tests/test_spec_001_triage.py::test_scenario_1_http_502_payments_outage_classified_as_p0 PASSED [  4%]
-tests/test_spec_001_triage.py::test_scenario_2_http_locked_account_mentioning_hoy_is_p2_not_p0 PASSED [  8%]
-tests/test_spec_001_triage.py::test_scenario_3_http_rejects_empty_or_whitespace_inputs[INC-1003- -EMPTY_RAW_TEXT] PASSED [ 12%]
-tests/test_spec_001_triage.py::test_scenario_3_http_rejects_empty_or_whitespace_inputs[-La pasarela de pagos devuelve 502-EMPTY_INCIDENT_ID] PASSED [ 16%]
-tests/test_spec_001_triage.py::test_scenario_4_cli_parity_with_http PASSED [ 20%]
-tests/test_spec_002_summary.py::test_bdd_global_summary_excludes_resolved PASSED [ 25%]
-tests/test_spec_002_summary.py::test_bdd_summary_filtered_by_component PASSED [ 29%]
-tests/test_spec_002_summary.py::test_bdd_empty_summary_is_successful[incidents0-params0] PASSED [ 33%]
-tests/test_spec_002_summary.py::test_bdd_empty_summary_is_successful[incidents1-params1] PASSED [ 37%]
-tests/test_spec_002_summary.py::test_bdd_cli_parity_with_http PASSED     [ 41%]
-tests/test_spec_002_summary.py::test_contract_invalid_reference_time_returns_422[no-es-fecha] PASSED [ 45%]
-tests/test_spec_002_summary.py::test_contract_invalid_reference_time_returns_422[2026-02-30T10:00:00] PASSED [ 50%]
-tests/test_spec_002_summary.py::test_contract_invalid_reference_time_returns_422[2026-11-20T12:00:00Z] PASSED [ 54%]
-tests/test_spec_002_summary.py::test_contract_invalid_reference_time_returns_422[2026-11-20T12:00:00+00:00] PASSED [ 58%]
-tests/test_spec_002_summary.py::test_contract_reference_time_before_creation_returns_400 PASSED [ 62%]
-tests/test_spec_002_summary.py::test_contract_cli_invalid_reference_time_exits_2 PASSED [ 66%]
-tests/test_spec_002_summary.py::test_contract_blank_component_means_no_filter PASSED [ 70%]
-tests/test_spec_002_summary.py::test_contract_escalation_required_status_is_not_active PASSED [ 75%]
-tests/test_spec_002_summary.py::test_contract_breach_and_escalation_boundaries PASSED [ 79%]
-tests/test_spec_002_summary.py::test_contract_cli_empty_summary_exits_0 PASSED [ 83%]
-tests/test_spec_002_summary.py::test_port_compliance_over_sqlite_repository PASSED [ 87%]
-tests/test_spec_002_summary.py::test_repository_save_get_and_find_open_duplicates PASSED [ 91%]
-tests/test_spec_002_summary.py::test_list_active_incidents_status_and_component_filter PASSED [ 95%]
-tests/test_spec_002_summary.py::test_service_get_active_incidents_summary_uses_port_and_maps_errors PASSED [100%]
+tests/test_spec_001_triage.py::test_scenario_1_http_502_payments_outage_classified_as_p0 PASSED [  2%]
+tests/test_spec_001_triage.py::test_scenario_2_http_locked_account_mentioning_hoy_is_p2_not_p0 PASSED [  5%]
+tests/test_spec_001_triage.py::test_scenario_3_http_rejects_empty_or_whitespace_inputs[INC-1003- -EMPTY_RAW_TEXT] PASSED [  8%]
+tests/test_spec_001_triage.py::test_scenario_3_http_rejects_empty_or_whitespace_inputs[-La pasarela de pagos devuelve 502-EMPTY_INCIDENT_ID] PASSED [ 11%]
+tests/test_spec_001_triage.py::test_scenario_4_cli_parity_with_http PASSED [ 14%]
+tests/test_spec_002_summary.py::test_bdd_global_summary_excludes_resolved PASSED [ 17%]
+tests/test_spec_002_summary.py::test_bdd_summary_filtered_by_component PASSED [ 20%]
+tests/test_spec_002_summary.py::test_bdd_empty_summary_is_successful[incidents0-params0] PASSED [ 23%]
+tests/test_spec_002_summary.py::test_bdd_empty_summary_is_successful[incidents1-params1] PASSED [ 26%]
+tests/test_spec_002_summary.py::test_bdd_cli_parity_with_http PASSED     [ 29%]
+tests/test_spec_002_summary.py::test_contract_invalid_reference_time_returns_422[no-es-fecha] PASSED [ 32%]
+tests/test_spec_002_summary.py::test_contract_invalid_reference_time_returns_422[2026-02-30T10:00:00] PASSED [ 35%]
+tests/test_spec_002_summary.py::test_contract_invalid_reference_time_returns_422[2026-11-20T12:00:00Z] PASSED [ 38%]
+tests/test_spec_002_summary.py::test_contract_invalid_reference_time_returns_422[2026-11-20T12:00:00+00:00] PASSED [ 41%]
+tests/test_spec_002_summary.py::test_contract_reference_time_before_creation_returns_400 PASSED [ 44%]
+tests/test_spec_002_summary.py::test_contract_cli_invalid_reference_time_exits_2 PASSED [ 47%]
+tests/test_spec_002_summary.py::test_contract_blank_component_means_no_filter PASSED [ 50%]
+tests/test_spec_002_summary.py::test_contract_escalation_required_status_is_not_active PASSED [ 52%]
+tests/test_spec_002_summary.py::test_contract_breach_and_escalation_boundaries PASSED [ 55%]
+tests/test_spec_002_summary.py::test_contract_cli_empty_summary_exits_0 PASSED [ 58%]
+tests/test_spec_002_summary.py::test_port_compliance_over_sqlite_repository PASSED [ 61%]
+tests/test_spec_002_summary.py::test_repository_save_get_and_find_open_duplicates PASSED [ 64%]
+tests/test_spec_002_summary.py::test_list_active_incidents_status_and_component_filter PASSED [ 67%]
+tests/test_spec_002_summary.py::test_service_get_active_incidents_summary_uses_port_and_maps_errors PASSED [ 70%]
+tests/test_spec_003_lifecycle_sla.py::test_bdd_creation_without_previous_duplicates PASSED [ 73%]
+tests/test_spec_003_lifecycle_sla.py::test_bdd_creation_detects_open_duplicate PASSED [ 76%]
+tests/test_spec_003_lifecycle_sla.py::test_bdd_sla_audit_business_hours_deterministic PASSED [ 79%]
+tests/test_spec_003_lifecycle_sla.py::test_bdd_sla_audit_not_found_and_before_creation PASSED [ 82%]
+tests/test_spec_003_lifecycle_sla.py::test_bdd_cli_create_and_sla_equivalent PASSED [ 85%]
+tests/test_spec_004_runtime_health.py::test_health_ok_http_and_cli PASSED [ 88%]
+tests/test_spec_004_runtime_health.py::test_health_unavailable_http PASSED [ 91%]
+tests/test_spec_004_runtime_health.py::test_health_unavailable_cli PASSED [ 94%]
+tests/test_spec_004_runtime_health.py::test_create_repository_dual_selection PASSED [ 97%]
+tests/test_spec_004_runtime_health.py::test_docker_compose_structure PASSED [100%]
 
-======================== 24 passed, 1 warning in 0.34s =========================
+============================== 34 passed in 1.13s ==============================
 ```
 
 - **Evidencia de CLI Typer y containerización (`docker compose config` / `docker compose up --build`)**:
@@ -116,5 +127,69 @@ $ uv run python -m src.adapters.inbound.cli triage --incident-id INC-1001 --raw-
 $ uv run python -m src.adapters.inbound.cli summary --reference-time "2026-11-20T12:00:00"
 {"reference_time": "2026-11-20T12:00:00", "component": null, "total_active": 0, "breached_count": 0, "incidents": []}
 
-[Pendiente al finalizar el Reto 2: pega aquí la salida de `cli health` y `docker compose config -q && echo "Compose OK"`]
+$ uv run python -m src.adapters.inbound.cli create --incident-id INC-3999 --title "Caída pagos 502" --raw-text "La pasarela de pagos devuelve 502 al cobrar con tarjeta" --created-at "2026-11-06T17:00:00"
+{"incident_id": "INC-3999", "severity": "P0", "component": "payments-gateway", "recommended_team": "Backend-Core", "duplicate_group_key": "payments-gateway:http-502-outage", "rationale": "Indisponibilidad global en pasarela de pagos (HTTP 502 Bad Gateway) que impide procesar transacciones.", "is_duplicate": false, "duplicate_of": []}
+
+$ uv run python -m src.adapters.inbound.cli health
+{"status": "ok", "database": "connected"}
+
+$ docker compose config -q && echo "Compose OK"
+Compose OK
+
+$ docker compose config
+name: starter-project
+services:
+  api:
+    environment:
+      DATABASE_URL: postgresql://incidentops:incidentops@db:5432/incidentops
+    networks:
+      default: null
+    build:
+      context: /home/sexdeg/Proyectos/starter-project
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+        required: true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health',
+          timeout=2)
+      timeout: 5s
+      interval: 15s
+      retries: 5
+    ports:
+      - mode: ingress
+        target: 8000
+        published: "8000"
+        protocol: tcp
+  db:
+    environment:
+      POSTGRES_DB: incidentops
+      POSTGRES_PASSWORD: incidentops
+      POSTGRES_USER: incidentops
+    image: postgres:16-alpine
+    networks:
+      default: null
+    volumes:
+      - type: volume
+        source: incidentops_pgdata
+        target: /var/lib/postgresql/data
+        volume: {}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U incidentops
+      timeout: 5s
+      interval: 10s
+      retries: 10
+networks:
+  default:
+    name: starter-project_default
+volumes:
+  incidentops_pgdata:
+    name: starter-project_incidentops_pgdata
 ```
